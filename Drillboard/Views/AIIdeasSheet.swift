@@ -1,29 +1,22 @@
 import SwiftUI
 
 struct AIIdeasSheet: View {
-    @Binding var plan: LessonPlan
-    @ObservedObject var store: PlanStore
+    /// Parent VM for the plan being edited — used for context + apply actions.
+    let planViewModel: PlanDetailViewModel
+
+    /// Own VM for AI generation state.
+    @State private var viewModel = AIIdeasViewModel()
     @Environment(\.dismiss) private var dismiss
 
-    @State private var library = IdeaLibrary.shared
-
-    @State private var promptText = ""
-    @State private var isLoading = false
-
-    // Output state for the currently displayed AI suggestion.
-    @State private var generatedIdeas = ""
-    @State private var generatedTitle = ""
-    @State private var generatedPrompt = ""
-    @State private var generatedCategory: String?
-    @State private var savedCurrent = false
-
-    @State private var errorMessage = ""
-    @State private var showingError = false
+    // UI-only state
     @State private var showingLibrary = false
 
+    private var plan: LessonPlan { planViewModel.plan }
     private var tags: [IdeaTag] { IdeaTag.tags(for: plan) }
 
     var body: some View {
+        @Bindable var vm = viewModel
+
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -33,8 +26,8 @@ struct AIIdeasSheet: View {
                     Divider()
                     quickPromptsSection
                     Divider()
-                    customPromptSection
-                    if !generatedIdeas.isEmpty {
+                    customPromptSection(vm: $vm)
+                    if !viewModel.generatedIdeas.isEmpty {
                         aiOutputCard
                     }
                 }
@@ -55,12 +48,12 @@ struct AIIdeasSheet: View {
                 }
             }
             .sheet(isPresented: $showingLibrary) {
-                IdeaLibraryView()
+                IdeaLibraryView(viewModel: viewModel)
             }
-            .alert("Error", isPresented: $showingError) {
+            .alert("Error", isPresented: $vm.showingError) {
                 Button("OK") {}
             } message: {
-                Text(errorMessage)
+                Text(viewModel.errorMessage)
             }
         }
     }
@@ -107,7 +100,13 @@ struct AIIdeasSheet: View {
 
     private func categoryButton(_ category: IdeaCategory) -> some View {
         Button {
-            Task { await generate(prompt: category.prompt(for: plan), categoryLabel: category.rawValue) }
+            Task {
+                await viewModel.generate(
+                    plan: plan,
+                    prompt: category.prompt(for: plan),
+                    categoryLabel: category.rawValue
+                )
+            }
         } label: {
             VStack(spacing: 6) {
                 Image(systemName: category.systemIcon)
@@ -123,14 +122,14 @@ struct AIIdeasSheet: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Generate \(category.rawValue) ideas")
-        .disabled(isLoading)
+        .disabled(viewModel.isLoading)
     }
 
-    // MARK: - Surprise Me
+    // MARK: - Surprise me
 
     private var surpriseButton: some View {
         Button {
-            Task { await generate(prompt: AIService.surprisePrompt(for: plan), categoryLabel: "Surprise") }
+            Task { await viewModel.generateSurprise(for: plan) }
         } label: {
             HStack {
                 Image(systemName: "wand.and.stars")
@@ -156,7 +155,7 @@ struct AIIdeasSheet: View {
             .foregroundStyle(.white)
         }
         .buttonStyle(.plain)
-        .disabled(isLoading)
+        .disabled(viewModel.isLoading)
         .accessibilityLabel("Surprise me — generate a full creative session")
     }
 
@@ -175,7 +174,7 @@ struct AIIdeasSheet: View {
 
     private func tagButton(_ tag: IdeaTag) -> some View {
         Button {
-            promptText = tag.prompt
+            viewModel.promptText = tag.prompt
         } label: {
             Text(tag.label)
                 .font(.caption.weight(.medium))
@@ -185,28 +184,29 @@ struct AIIdeasSheet: View {
                 .foregroundStyle(.primary)
         }
         .buttonStyle(.plain)
-        .disabled(isLoading)
+        .disabled(viewModel.isLoading)
     }
 
     // MARK: - Custom prompt
 
-    private var customPromptSection: some View {
+    @ViewBuilder
+    private func customPromptSection(vm: Bindable<AIIdeasViewModel>) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 sectionHeading("Custom prompt")
                 Spacer()
-                if !library.promptHistory.isEmpty {
+                if !viewModel.promptHistory.isEmpty {
                     promptHistoryMenu
                 }
             }
 
-            TextEditor(text: $promptText)
+            TextEditor(text: vm.promptText)
                 .frame(minHeight: 80)
                 .padding(10)
                 .background(.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
                 .font(.body)
                 .overlay(alignment: .topLeading) {
-                    if promptText.isEmpty {
+                    if viewModel.promptText.isEmpty {
                         Text("Ask anything, e.g. \"Give me a fun game to teach timing for beginners\"")
                             .font(.body)
                             .foregroundStyle(.tertiary)
@@ -223,9 +223,9 @@ struct AIIdeasSheet: View {
     private var promptHistoryMenu: some View {
         Menu {
             Section("Recent prompts") {
-                ForEach(library.promptHistory, id: \.self) { past in
+                ForEach(viewModel.promptHistory, id: \.self) { past in
                     Button {
-                        promptText = past
+                        viewModel.promptText = past
                     } label: {
                         Text(past)
                     }
@@ -233,7 +233,7 @@ struct AIIdeasSheet: View {
             }
             Section {
                 Button(role: .destructive) {
-                    library.clearHistory()
+                    viewModel.clearHistory()
                 } label: {
                     Label("Clear History", systemImage: "trash")
                 }
@@ -247,17 +247,23 @@ struct AIIdeasSheet: View {
 
     private var generateButton: some View {
         Button {
-            Task { await generate(prompt: promptText, categoryLabel: nil) }
+            Task {
+                await viewModel.generate(
+                    plan: plan,
+                    prompt: viewModel.promptText,
+                    categoryLabel: nil
+                )
+            }
         } label: {
             HStack {
-                if isLoading {
+                if viewModel.isLoading {
                     ProgressView()
                         .tint(.white)
                         .scaleEffect(0.85)
                 } else {
                     Image(systemName: "sparkles")
                 }
-                Text(isLoading ? "Generating..." : "Generate ideas")
+                Text(viewModel.isLoading ? "Generating..." : "Generate ideas")
                     .fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity)
@@ -266,7 +272,7 @@ struct AIIdeasSheet: View {
             .foregroundStyle(.white)
         }
         .buttonStyle(.plain)
-        .disabled(isLoading || promptText.trimmingCharacters(in: .whitespaces).isEmpty)
+        .disabled(viewModel.isLoading || viewModel.promptText.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
     // MARK: - Output
@@ -286,13 +292,13 @@ struct AIIdeasSheet: View {
                 applyMenu
             }
 
-            Text(generatedIdeas)
+            Text(viewModel.generatedIdeas)
                 .font(.subheadline)
                 .lineSpacing(4)
                 .textSelection(.enabled)
 
             Button {
-                UIPasteboard.general.string = generatedIdeas
+                viewModel.copyOutputToPasteboard()
             } label: {
                 Label("Copy all", systemImage: "doc.on.doc")
                     .font(.caption.weight(.medium))
@@ -309,26 +315,26 @@ struct AIIdeasSheet: View {
 
     private var bookmarkButton: some View {
         Button {
-            saveCurrent()
+            viewModel.saveCurrent(for: plan)
         } label: {
-            Image(systemName: savedCurrent ? "bookmark.fill" : "bookmark")
+            Image(systemName: viewModel.savedCurrent ? "bookmark.fill" : "bookmark")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.purple)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(savedCurrent ? "Saved to library" : "Save to library")
-        .disabled(savedCurrent)
+        .accessibilityLabel(viewModel.savedCurrent ? "Saved to library" : "Save to library")
+        .disabled(viewModel.savedCurrent)
     }
 
     private var applyMenu: some View {
         Menu {
             ForEach(plan.phases.indices, id: \.self) { i in
                 Button("Apply to \(plan.phases[i].name)") {
-                    applyToPhase(index: i)
+                    planViewModel.applyToPhase(index: i, text: viewModel.generatedIdeas)
                 }
             }
             Button("Apply to General Notes") {
-                applyToNotes()
+                planViewModel.applyToNotes(text: viewModel.generatedIdeas)
             }
         } label: {
             Label("Apply to...", systemImage: "square.and.arrow.down")
@@ -346,65 +352,9 @@ struct AIIdeasSheet: View {
             .textCase(.uppercase)
             .tracking(0.5)
     }
-
-    // MARK: - Actions
-
-    private func generate(prompt rawPrompt: String, categoryLabel: String?) async {
-        let prompt = rawPrompt.trimmingCharacters(in: .whitespaces)
-        guard !prompt.isEmpty else { return }
-        isLoading = true
-        generatedIdeas = ""
-        generatedTitle = ""
-        generatedPrompt = prompt
-        generatedCategory = categoryLabel
-        savedCurrent = false
-
-        // Only record user-typed prompts in history (not auto-built category/surprise ones).
-        if categoryLabel == nil {
-            library.recordPrompt(prompt)
-        }
-
-        do {
-            let response = try await AIService.shared.generateIdeas(plan: plan, userPrompt: prompt)
-            generatedIdeas = response
-            generatedTitle = response.extractedIdeaTitle(fallback: categoryLabel ?? "AI Idea")
-            savedCurrent = library.contains(content: response)
-        } catch {
-            errorMessage = error.localizedDescription
-            showingError = true
-        }
-        isLoading = false
-    }
-
-    private func saveCurrent() {
-        guard !generatedIdeas.isEmpty, !savedCurrent else { return }
-        let idea = SavedIdea(
-            title: generatedTitle.isEmpty ? "AI Idea" : generatedTitle,
-            content: generatedIdeas,
-            sport: plan.sport,
-            level: plan.level,
-            category: generatedCategory,
-            promptUsed: generatedPrompt
-        )
-        library.save(idea)
-        withAnimation { savedCurrent = true }
-    }
-
-    private func applyToPhase(index: Int) {
-        guard index < plan.phases.count else { return }
-        let separator = plan.phases[index].content.isEmpty ? "" : "\n\n--- AI Suggestions ---\n"
-        plan.phases[index].content += separator + generatedIdeas
-        store.update(plan)
-    }
-
-    private func applyToNotes() {
-        let separator = plan.notes.isEmpty ? "" : "\n\n--- AI Suggestions ---\n"
-        plan.notes += separator + generatedIdeas
-        store.update(plan)
-    }
 }
 
-// MARK: - Native flow layout (replaces the old GeometryReader-based TagFlowLayout)
+// MARK: - Native flow layout
 
 /// Wraps its children onto multiple rows, respecting each child's intrinsic size.
 struct FlowLayout: Layout {

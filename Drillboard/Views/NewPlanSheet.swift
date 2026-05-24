@@ -1,9 +1,11 @@
 import SwiftUI
 
 struct NewPlanSheet: View {
-    @ObservedObject var store: PlanStore
+    /// Parent VM that owns the plans collection — receives the new plan via `addPlan`.
+    let listViewModel: PlanListViewModel
     @Environment(\.dismiss) private var dismiss
 
+    // UI-only form state — transient until the user taps Create.
     @State private var title = ""
     @State private var sport: SportDiscipline = .karate
     @State private var level: SkillLevel = .beginner
@@ -58,12 +60,13 @@ struct NewPlanSheet: View {
 
     private func createAndDismiss() {
         var plan = LessonPlan()
-        plan.title = title.trimmingCharacters(in: .whitespaces).isEmpty ? "Untitled Session" : title
+        let trimmedTitle = title.trimmingCharacters(in: .whitespaces)
+        plan.title = trimmedTitle.isEmpty ? "Untitled Session" : trimmedTitle
         plan.sport = sport
         plan.level = level
         plan.durationMinutes = duration
         plan.focus = focus
-        store.add(plan)
+        listViewModel.addPlan(plan)
         dismiss()
     }
 }

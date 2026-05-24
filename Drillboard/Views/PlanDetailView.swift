@@ -1,40 +1,37 @@
 import SwiftUI
 
 struct PlanDetailView: View {
-    @State private var plan: LessonPlan
-    @ObservedObject var store: PlanStore
+    @State private var viewModel: PlanDetailViewModel
     @Environment(\.dismiss) private var dismiss
 
+    // UI-only state
     @State private var showingAISheet = false
     @State private var showingDeleteAlert = false
 
     init(plan: LessonPlan, store: PlanStore) {
-        _plan = State(initialValue: plan)
-        self.store = store
+        _viewModel = State(wrappedValue: PlanDetailViewModel(plan: plan, store: store))
     }
 
     var body: some View {
+        @Bindable var vm = viewModel
+
         List {
-            // Header section
             Section {
-                metaFields
+                MetaFieldsSection(viewModel: viewModel)
             }
 
-            // Phases
             Section("Lesson Structure") {
-                ForEach($plan.phases) { $phase in
+                ForEach($vm.plan.phases) { $phase in
                     PhaseRowView(phase: $phase)
                 }
             }
 
-            // Notes
             Section("General Notes") {
-                TextEditor(text: $plan.notes)
+                TextEditor(text: $vm.plan.notes)
                     .frame(minHeight: 80)
                     .font(.body)
             }
 
-            // Danger zone
             Section {
                 Button(role: .destructive) {
                     showingDeleteAlert = true
@@ -44,10 +41,10 @@ struct PlanDetailView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle(plan.title)
+        .navigationTitle(vm.plan.title)
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     showingAISheet = true
                 } label: {
@@ -56,15 +53,12 @@ struct PlanDetailView: View {
                 .tint(.purple)
             }
         }
-        .onChange(of: plan) { _, newValue in
-            store.update(newValue)
-        }
         .sheet(isPresented: $showingAISheet) {
-            AIIdeasSheet(plan: $plan, store: store)
+            AIIdeasSheet(planViewModel: viewModel)
         }
         .alert("Delete Plan?", isPresented: $showingDeleteAlert) {
             Button("Delete", role: .destructive) {
-                store.delete(plan)
+                viewModel.delete()
                 dismiss()
             }
             Button("Cancel", role: .cancel) {}
@@ -72,68 +66,72 @@ struct PlanDetailView: View {
             Text("This action cannot be undone.")
         }
     }
+}
 
-    private var metaFields: some View {
-        Group {
-            // Title
-            HStack {
-                Label("Title", systemImage: "pencil")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 110, alignment: .leading)
-                TextField("Session title", text: $plan.title)
-                    .multilineTextAlignment(.trailing)
-            }
+// MARK: - Meta Fields
 
-            // Sport
-            HStack {
-                Label("Discipline", systemImage: "figure.martial.arts")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 110, alignment: .leading)
-                Spacer()
-                Picker("", selection: $plan.sport) {
-                    ForEach(SportDiscipline.allCases, id: \.self) { s in
-                        Text("\(s.emoji) \(s.rawValue)").tag(s)
-                    }
+private struct MetaFieldsSection: View {
+    @Bindable var viewModel: PlanDetailViewModel
+
+    var body: some View {
+        // Title
+        HStack {
+            Label("Title", systemImage: "pencil")
+                .foregroundStyle(.secondary)
+                .frame(width: 110, alignment: .leading)
+            TextField("Session title", text: $viewModel.plan.title)
+                .multilineTextAlignment(.trailing)
+        }
+
+        // Sport
+        HStack {
+            Label("Discipline", systemImage: "figure.martial.arts")
+                .foregroundStyle(.secondary)
+                .frame(width: 110, alignment: .leading)
+            Spacer()
+            Picker("", selection: $viewModel.plan.sport) {
+                ForEach(SportDiscipline.allCases, id: \.self) { s in
+                    Text("\(s.emoji) \(s.rawValue)").tag(s)
                 }
-                .labelsHidden()
             }
+            .labelsHidden()
+        }
 
-            // Level
-            HStack {
-                Label("Level", systemImage: "chart.bar")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 110, alignment: .leading)
-                Spacer()
-                Picker("", selection: $plan.level) {
-                    ForEach(SkillLevel.allCases, id: \.self) { l in
-                        Text(l.rawValue).tag(l)
-                    }
+        // Level
+        HStack {
+            Label("Level", systemImage: "chart.bar")
+                .foregroundStyle(.secondary)
+                .frame(width: 110, alignment: .leading)
+            Spacer()
+            Picker("", selection: $viewModel.plan.level) {
+                ForEach(SkillLevel.allCases, id: \.self) { l in
+                    Text(l.rawValue).tag(l)
                 }
-                .labelsHidden()
             }
+            .labelsHidden()
+        }
 
-            // Duration
-            HStack {
-                Label("Duration", systemImage: "clock")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 110, alignment: .leading)
-                Spacer()
-                Picker("", selection: $plan.durationMinutes) {
-                    ForEach([30, 45, 60, 75, 90, 120], id: \.self) { d in
-                        Text("\(d) min").tag(d)
-                    }
+        // Duration
+        HStack {
+            Label("Duration", systemImage: "clock")
+                .foregroundStyle(.secondary)
+                .frame(width: 110, alignment: .leading)
+            Spacer()
+            Picker("", selection: $viewModel.plan.durationMinutes) {
+                ForEach([30, 45, 60, 75, 90, 120], id: \.self) { d in
+                    Text("\(d) min").tag(d)
                 }
-                .labelsHidden()
             }
+            .labelsHidden()
+        }
 
-            // Focus
-            HStack {
-                Label("Focus", systemImage: "target")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 110, alignment: .leading)
-                TextField("e.g. roundhouse kick", text: $plan.focus)
-                    .multilineTextAlignment(.trailing)
-            }
+        // Focus
+        HStack {
+            Label("Focus", systemImage: "target")
+                .foregroundStyle(.secondary)
+                .frame(width: 110, alignment: .leading)
+            TextField("e.g. roundhouse kick", text: $viewModel.plan.focus)
+                .multilineTextAlignment(.trailing)
         }
     }
 }
@@ -159,9 +157,9 @@ struct PhaseRowView: View {
                     Circle()
                         .fill(dotColor)
                         .frame(width: 10, height: 10)
+                        .accessibilityHidden(true)
                     Text(phase.name)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                     Spacer()
                     Text("\(phase.durationMinutes) min")
@@ -174,6 +172,7 @@ struct PhaseRowView: View {
             }
             .buttonStyle(.plain)
             .padding(.vertical, 6)
+            .accessibilityLabel("\(phase.name), \(phase.durationMinutes) minutes, \(isExpanded ? "expanded" : "collapsed")")
 
             if isExpanded {
                 TextEditor(text: $phase.content)
