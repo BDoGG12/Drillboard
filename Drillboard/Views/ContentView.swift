@@ -1,14 +1,16 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var store = PlanStore()
+    @State private var viewModel = PlanListViewModel()
+
+    // UI-only state
     @State private var showingNewPlan = false
     @State private var showingSettings = false
 
     var body: some View {
         NavigationStack {
             Group {
-                if store.plans.isEmpty {
+                if viewModel.plans.isEmpty {
                     EmptyPlansView()
                 } else {
                     planList
@@ -16,23 +18,23 @@ struct ContentView: View {
             }
             .navigationTitle("Lesson Plans")
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button {
                         showingSettings = true
                     } label: {
-                        Image(systemName: "gearshape")
+                        Label("Settings", systemImage: "gearshape")
                     }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showingNewPlan = true
                     } label: {
-                        Image(systemName: "plus")
+                        Label("New Plan", systemImage: "plus")
                     }
                 }
             }
             .sheet(isPresented: $showingNewPlan) {
-                NewPlanSheet(store: store)
+                NewPlanSheet(listViewModel: viewModel)
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
@@ -42,13 +44,15 @@ struct ContentView: View {
 
     private var planList: some View {
         List {
-            ForEach(store.plans) { plan in
-                NavigationLink(destination: PlanDetailView(plan: plan, store: store)) {
+            ForEach(viewModel.plans) { plan in
+                NavigationLink {
+                    PlanDetailView(plan: plan, store: viewModel.store)
+                } label: {
                     PlanRowView(plan: plan)
                 }
             }
             .onDelete { offsets in
-                store.delete(at: offsets)
+                viewModel.deletePlans(at: offsets)
             }
         }
         .listStyle(.insetGrouped)
@@ -65,8 +69,8 @@ struct PlanRowView: View {
             Text(plan.sport.emoji)
                 .font(.system(size: 32))
                 .frame(width: 44, height: 44)
-                .background(Color(.systemGray6))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .background(.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(plan.title)
@@ -95,19 +99,11 @@ struct PlanRowView: View {
 
 struct EmptyPlansView: View {
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "list.clipboard")
-                .font(.system(size: 56))
-                .foregroundStyle(.secondary)
-            Text("No lesson plans yet")
-                .font(.title3)
-                .fontWeight(.semibold)
-            Text("Tap + to create your first session plan.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(40)
+        ContentUnavailableView(
+            "No Lesson Plans Yet",
+            systemImage: "list.clipboard",
+            description: Text("Tap + to create your first session plan.")
+        )
     }
 }
 
@@ -127,12 +123,10 @@ struct LevelBadge: View {
 
     var body: some View {
         Text(level.rawValue)
-            .font(.caption2)
-            .fontWeight(.semibold)
+            .font(.caption2.weight(.semibold))
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(color.opacity(0.15))
+            .background(color.opacity(0.15), in: Capsule())
             .foregroundStyle(color)
-            .clipShape(Capsule())
     }
 }

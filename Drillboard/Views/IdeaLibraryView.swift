@@ -1,13 +1,15 @@
 import SwiftUI
 
 struct IdeaLibraryView: View {
-    @State private var library = IdeaLibrary.shared
+    /// The same `AIIdeasViewModel` instance used by the parent sheet — so saves and
+    /// deletes from either screen stay in sync without a second VM.
+    let viewModel: AIIdeasViewModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             Group {
-                if library.savedIdeas.isEmpty {
+                if viewModel.savedIdeas.isEmpty {
                     ContentUnavailableView(
                         "No Saved Ideas Yet",
                         systemImage: "bookmark",
@@ -15,13 +17,13 @@ struct IdeaLibraryView: View {
                     )
                 } else {
                     List {
-                        ForEach(library.savedIdeas) { idea in
+                        ForEach(viewModel.savedIdeas) { idea in
                             NavigationLink(value: idea) {
                                 IdeaLibraryRow(idea: idea)
                             }
                         }
                         .onDelete { offsets in
-                            library.removeIdeas(at: offsets)
+                            viewModel.removeIdeas(at: offsets)
                         }
                     }
                 }
