@@ -23,7 +23,7 @@ private struct AnthropicContent: Codable {
     let text: String?
 }
 
-// MARK: - Service
+// MARK: - Errors
 
 enum AIError: LocalizedError {
     case missingAPIKey
@@ -45,28 +45,51 @@ enum AIError: LocalizedError {
     }
 }
 
-class AIService {
+// MARK: - Service
+
+final class AIService {
     static let shared = AIService()
     private init() {}
 
     static let modelID = "claude-sonnet-4-6"
 
-    // Reads the API key from UserDefaults (set in SettingsView)
+    /// API key persisted in `UserDefaults`, set via Settings.
     var apiKey: String {
         get { UserDefaults.standard.string(forKey: "drillboard_api_key") ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: "drillboard_api_key") }
     }
 
+    /// Structured system prompt — coaches get a scannable Title / Steps / Coaching tip block.
+    private static let systemPrompt = """
+    You are an expert sports coach and lesson-planning assistant. ALWAYS respond \
+    in this exact structured format so coaches can scan results in seconds:
+
+    Title: A short, vivid name for the suggestion (under 8 words).
+
+    Steps:
+    1. First step as a direct coaching instruction.
+    2. Next step.
+    3. Continue with 3–6 numbered steps total.
+
+    Coaching tip: One concise sentence with the single most important thing for the coach to remember while running this.
+
+    Keep instructions specific, level-appropriate, and safe. Avoid filler, preamble, or markdown headers — just the three labeled sections above.
+    """
+
+    /// Builds a "surprise me" prompt that asks the model to design a full creative session.
+    static func surprisePrompt(for plan: LessonPlan) -> String {
+        let focus = plan.focus.isEmpty ? "the discipline's fundamentals" : plan.focus
+        return """
+        Design a creative, memorable \(plan.durationMinutes)-minute \(plan.sport.rawValue) session \
+        for \(plan.level.rawValue.lowercased()) students focused on \(focus). Surprise me — \
+        include one unexpected exercise or theme that will make this lesson stand out. \
+        Cover the full session arc from start to finish.
+        """
+    }
+
     func generateIdeas(plan: LessonPlan, userPrompt: String) async throws -> String {
         let key = apiKey.trimmingCharacters(in: .whitespaces)
         guard !key.isEmpty else { throw AIError.missingAPIKey }
-
-        let systemPrompt = """
-        You are an expert sports coach and martial arts instructor assistant. \
-        You help coaches create engaging, creative, and effective lesson plans. \
-        Be concise, practical, and specific. Use numbered lists or clear sections \
-        when listing multiple ideas. Tailor everything to the sport and level provided.
-        """
 
         let contextPrompt = """
         Session context:
@@ -81,7 +104,7 @@ class AIService {
         let body = AnthropicRequest(
             model: Self.modelID,
             max_tokens: 1000,
-            system: systemPrompt,
+            system: Self.systemPrompt,
             messages: [AnthropicMessage(role: "user", content: contextPrompt)]
         )
 
@@ -105,7 +128,7 @@ class AIService {
             }
 
             let decoded = try JSONDecoder().decode(AnthropicResponse.self, from: data)
-            let text = decoded.content.compactMap { $0.text }.joined(separator: "\n")
+            let text = decoded.content.compactMap(\.text).joined(separator: "\n")
             guard !text.isEmpty else { throw AIError.invalidResponse }
             return text
 
@@ -114,5 +137,21 @@ class AIService {
         } catch {
             throw AIError.networkError(error)
         }
+    }
+}
+
+// MARK: - Title parsing
+
+extension String {
+    /// Pulls the `Title:` line out of a structured AI response, falling back if absent.
+    func extractedIdeaTitle(fallback: String) -> String {
+        for raw in split(separator: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.lowercased().hasPrefix("title:") {
+                let value = line.dropFirst("title:".count).trimmingCharacters(in: .whitespaces)
+                if !value.isEmpty { return value }
+            }
+        }
+        return fallback
     }
 }

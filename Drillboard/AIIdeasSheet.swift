@@ -5,12 +5,21 @@ struct AIIdeasSheet: View {
     @ObservedObject var store: PlanStore
     @Environment(\.dismiss) private var dismiss
 
+    @State private var library = IdeaLibrary.shared
+
     @State private var promptText = ""
     @State private var isLoading = false
+
+    // Output state for the currently displayed AI suggestion.
     @State private var generatedIdeas = ""
+    @State private var generatedTitle = ""
+    @State private var generatedPrompt = ""
+    @State private var generatedCategory: String?
+    @State private var savedCurrent = false
+
     @State private var errorMessage = ""
     @State private var showingError = false
-    @State private var showingApplyMenu = false
+    @State private var showingLibrary = false
 
     private var tags: [IdeaTag] { IdeaTag.tags(for: plan) }
 
@@ -18,76 +27,13 @@ struct AIIdeasSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-
-                    // Context pill
                     contextHeader
-
-                    // Quick tags
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Quick prompts")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-                            .tracking(0.5)
-
-                        TagFlowLayout(tags: tags) { tag in
-                            tagButton(tag)
-                        }
-                    }
-
+                    categoryRow
+                    surpriseButton
                     Divider()
-
-                    // Custom prompt
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Custom prompt")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-                            .tracking(0.5)
-
-                        TextEditor(text: $promptText)
-                            .frame(minHeight: 80)
-                            .padding(10)
-                            .background(Color(.systemGray6))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                            .font(.body)
-                            .overlay(alignment: .topLeading) {
-                                if promptText.isEmpty {
-                                    Text("Ask anything, e.g. \"Give me a fun game to teach timing for beginners\"")
-                                        .font(.body)
-                                        .foregroundStyle(.tertiary)
-                                        .padding(.top, 18)
-                                        .padding(.leading, 14)
-                                        .allowsHitTesting(false)
-                                }
-                            }
-
-                        Button {
-                            Task { await generate() }
-                        } label: {
-                            HStack {
-                                if isLoading {
-                                    ProgressView()
-                                        .tint(.white)
-                                        .scaleEffect(0.85)
-                                } else {
-                                    Image(systemName: "sparkles")
-                                }
-                                Text(isLoading ? "Generating..." : "Generate ideas")
-                                    .fontWeight(.semibold)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Color.purple)
-                            .foregroundStyle(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                        }
-                        .disabled(isLoading || promptText.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-
-                    // AI Output
+                    quickPromptsSection
+                    Divider()
+                    customPromptSection
                     if !generatedIdeas.isEmpty {
                         aiOutputCard
                     }
@@ -97,9 +43,19 @@ struct AIIdeasSheet: View {
             .navigationTitle("AI Idea Generator")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showingLibrary = true
+                    } label: {
+                        Label("Library", systemImage: "books.vertical")
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .sheet(isPresented: $showingLibrary) {
+                IdeaLibraryView()
             }
             .alert("Error", isPresented: $showingError) {
                 Button("OK") {}
@@ -109,16 +65,16 @@ struct AIIdeasSheet: View {
         }
     }
 
-    // MARK: - Subviews
+    // MARK: - Context header
 
     private var contextHeader: some View {
         HStack(spacing: 10) {
             Text(plan.sport.emoji)
                 .font(.title2)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(plan.title)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                    .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 Text("\(plan.sport.rawValue) · \(plan.level.rawValue) · \(plan.durationMinutes) min" + (plan.focus.isEmpty ? "" : " · \(plan.focus)"))
                     .font(.caption)
@@ -128,8 +84,93 @@ struct AIIdeasSheet: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .background(.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - Category row
+
+    private var categoryRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeading("Browse by category")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(IdeaCategory.allCases) { category in
+                        categoryButton(category)
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            .scrollClipDisabled()
+        }
+    }
+
+    private func categoryButton(_ category: IdeaCategory) -> some View {
+        Button {
+            Task { await generate(prompt: category.prompt(for: plan), categoryLabel: category.rawValue) }
+        } label: {
+            VStack(spacing: 6) {
+                Image(systemName: category.systemIcon)
+                    .font(.title3)
+                Text(category.rawValue)
+                    .font(.caption2.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(width: 86, height: 70)
+            .background(.purple.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            .foregroundStyle(.purple)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Generate \(category.rawValue) ideas")
+        .disabled(isLoading)
+    }
+
+    // MARK: - Surprise Me
+
+    private var surpriseButton: some View {
+        Button {
+            Task { await generate(prompt: AIService.surprisePrompt(for: plan), categoryLabel: "Surprise") }
+        } label: {
+            HStack {
+                Image(systemName: "wand.and.stars")
+                    .font(.title3)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Surprise me")
+                        .font(.headline)
+                    Text("Auto-design a full creative session")
+                        .font(.caption)
+                        .opacity(0.85)
+                }
+                Spacer()
+            }
+            .padding(.vertical, 14)
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity)
+            .background(
+                LinearGradient(colors: [.purple, .pink],
+                               startPoint: .leading,
+                               endPoint: .trailing),
+                in: RoundedRectangle(cornerRadius: 14)
+            )
+            .foregroundStyle(.white)
+        }
+        .buttonStyle(.plain)
+        .disabled(isLoading)
+        .accessibilityLabel("Surprise me — generate a full creative session")
+    }
+
+    // MARK: - Quick prompts
+
+    private var quickPromptsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeading("Quick prompts")
+            FlowLayout(spacing: 8) {
+                ForEach(tags) { tag in
+                    tagButton(tag)
+                }
+            }
+        }
     }
 
     private func tagButton(_ tag: IdeaTag) -> some View {
@@ -137,16 +178,98 @@ struct AIIdeasSheet: View {
             promptText = tag.prompt
         } label: {
             Text(tag.label)
-                .font(.caption)
-                .fontWeight(.medium)
+                .font(.caption.weight(.medium))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                .background(Color(.systemGray5))
+                .background(.gray.opacity(0.15), in: Capsule())
                 .foregroundStyle(.primary)
-                .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+        .disabled(isLoading)
     }
+
+    // MARK: - Custom prompt
+
+    private var customPromptSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                sectionHeading("Custom prompt")
+                Spacer()
+                if !library.promptHistory.isEmpty {
+                    promptHistoryMenu
+                }
+            }
+
+            TextEditor(text: $promptText)
+                .frame(minHeight: 80)
+                .padding(10)
+                .background(.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                .font(.body)
+                .overlay(alignment: .topLeading) {
+                    if promptText.isEmpty {
+                        Text("Ask anything, e.g. \"Give me a fun game to teach timing for beginners\"")
+                            .font(.body)
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 18)
+                            .padding(.leading, 14)
+                            .allowsHitTesting(false)
+                    }
+                }
+
+            generateButton
+        }
+    }
+
+    private var promptHistoryMenu: some View {
+        Menu {
+            Section("Recent prompts") {
+                ForEach(library.promptHistory, id: \.self) { past in
+                    Button {
+                        promptText = past
+                    } label: {
+                        Text(past)
+                    }
+                }
+            }
+            Section {
+                Button(role: .destructive) {
+                    library.clearHistory()
+                } label: {
+                    Label("Clear History", systemImage: "trash")
+                }
+            }
+        } label: {
+            Label("History", systemImage: "clock.arrow.circlepath")
+                .font(.caption.weight(.semibold))
+        }
+        .accessibilityLabel("Recent prompts")
+    }
+
+    private var generateButton: some View {
+        Button {
+            Task { await generate(prompt: promptText, categoryLabel: nil) }
+        } label: {
+            HStack {
+                if isLoading {
+                    ProgressView()
+                        .tint(.white)
+                        .scaleEffect(0.85)
+                } else {
+                    Image(systemName: "sparkles")
+                }
+                Text(isLoading ? "Generating..." : "Generate ideas")
+                    .fontWeight(.semibold)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(.purple, in: RoundedRectangle(cornerRadius: 12))
+            .foregroundStyle(.white)
+        }
+        .buttonStyle(.plain)
+        .disabled(isLoading || promptText.trimmingCharacters(in: .whitespaces).isEmpty)
+    }
+
+    // MARK: - Output
 
     private var aiOutputCard: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -154,66 +277,117 @@ struct AIIdeasSheet: View {
                 Image(systemName: "sparkles")
                     .foregroundStyle(.purple)
                 Text("AI suggestions")
-                    .font(.caption)
-                    .fontWeight(.semibold)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.purple)
                     .textCase(.uppercase)
                     .tracking(0.5)
                 Spacer()
-                Menu {
-                    ForEach(plan.phases.indices, id: \.self) { i in
-                        Button("Apply to \(plan.phases[i].name)") {
-                            applyToPhase(index: i)
-                        }
-                    }
-                    Button("Apply to General Notes") {
-                        applyToNotes()
-                    }
-                } label: {
-                    Label("Apply to...", systemImage: "square.and.arrow.down")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                }
-                .tint(.purple)
+                bookmarkButton
+                applyMenu
             }
 
             Text(generatedIdeas)
                 .font(.subheadline)
                 .lineSpacing(4)
+                .textSelection(.enabled)
 
             Button {
                 UIPasteboard.general.string = generatedIdeas
             } label: {
                 Label("Copy all", systemImage: "doc.on.doc")
-                    .font(.caption)
-                    .fontWeight(.medium)
+                    .font(.caption.weight(.medium))
             }
             .tint(.secondary)
         }
         .padding(14)
-        .background(Color.purple.opacity(0.07))
+        .background(.purple.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.purple.opacity(0.25), lineWidth: 1)
+                .stroke(.purple.opacity(0.25), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var bookmarkButton: some View {
+        Button {
+            saveCurrent()
+        } label: {
+            Image(systemName: savedCurrent ? "bookmark.fill" : "bookmark")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.purple)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(savedCurrent ? "Saved to library" : "Save to library")
+        .disabled(savedCurrent)
+    }
+
+    private var applyMenu: some View {
+        Menu {
+            ForEach(plan.phases.indices, id: \.self) { i in
+                Button("Apply to \(plan.phases[i].name)") {
+                    applyToPhase(index: i)
+                }
+            }
+            Button("Apply to General Notes") {
+                applyToNotes()
+            }
+        } label: {
+            Label("Apply to...", systemImage: "square.and.arrow.down")
+                .font(.caption.weight(.semibold))
+        }
+        .tint(.purple)
+    }
+
+    // MARK: - Layout helpers
+
+    private func sectionHeading(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .tracking(0.5)
     }
 
     // MARK: - Actions
 
-    @MainActor
-    private func generate() async {
-        let prompt = promptText.trimmingCharacters(in: .whitespaces)
+    private func generate(prompt rawPrompt: String, categoryLabel: String?) async {
+        let prompt = rawPrompt.trimmingCharacters(in: .whitespaces)
         guard !prompt.isEmpty else { return }
         isLoading = true
         generatedIdeas = ""
+        generatedTitle = ""
+        generatedPrompt = prompt
+        generatedCategory = categoryLabel
+        savedCurrent = false
+
+        // Only record user-typed prompts in history (not auto-built category/surprise ones).
+        if categoryLabel == nil {
+            library.recordPrompt(prompt)
+        }
+
         do {
-            generatedIdeas = try await AIService.shared.generateIdeas(plan: plan, userPrompt: prompt)
+            let response = try await AIService.shared.generateIdeas(plan: plan, userPrompt: prompt)
+            generatedIdeas = response
+            generatedTitle = response.extractedIdeaTitle(fallback: categoryLabel ?? "AI Idea")
+            savedCurrent = library.contains(content: response)
         } catch {
             errorMessage = error.localizedDescription
             showingError = true
         }
         isLoading = false
+    }
+
+    private func saveCurrent() {
+        guard !generatedIdeas.isEmpty, !savedCurrent else { return }
+        let idea = SavedIdea(
+            title: generatedTitle.isEmpty ? "AI Idea" : generatedTitle,
+            content: generatedIdeas,
+            sport: plan.sport,
+            level: plan.level,
+            category: generatedCategory,
+            promptUsed: generatedPrompt
+        )
+        library.save(idea)
+        withAnimation { savedCurrent = true }
     }
 
     private func applyToPhase(index: Int) {
@@ -230,51 +404,47 @@ struct AIIdeasSheet: View {
     }
 }
 
-// MARK: - Flow Layout for tags
+// MARK: - Native flow layout (replaces the old GeometryReader-based TagFlowLayout)
 
-struct TagFlowLayout<Data: RandomAccessCollection, Content: View>: View where Data.Element: Identifiable {
-    let tags: Data
-    let content: (Data.Element) -> Content
+/// Wraps its children onto multiple rows, respecting each child's intrinsic size.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
 
-    @State private var totalHeight: CGFloat = .zero
-
-    var body: some View {
-        GeometryReader { geo in
-            self.generateContent(in: geo)
-        }
-        .frame(height: totalHeight)
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        return arrange(subviews: subviews, maxWidth: maxWidth).size
     }
 
-    private func generateContent(in geo: GeometryProxy) -> some View {
-        var width: CGFloat = 0
-        var height: CGFloat = 0
-        var rows: [[Data.Element]] = [[]]
-
-        for tag in tags {
-            let tagWidth: CGFloat = 110
-            if width + tagWidth > geo.size.width {
-                rows.append([tag])
-                width = tagWidth
-                height += 36
-            } else {
-                rows[rows.count - 1].append(tag)
-                width += tagWidth + 8
-            }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrange(subviews: subviews, maxWidth: bounds.width)
+        for (index, point) in result.offsets.enumerated() {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            subviews[index].place(
+                at: CGPoint(x: bounds.minX + point.x, y: bounds.minY + point.y),
+                proposal: ProposedViewSize(size)
+            )
         }
+    }
 
-        return VStack(alignment: .leading, spacing: 8) {
-            ForEach(rows.indices, id: \.self) { i in
-                HStack(spacing: 8) {
-                    ForEach(rows[i]) { tag in
-                        content(tag)
-                    }
-                }
+    private func arrange(subviews: Subviews, maxWidth: CGFloat) -> (offsets: [CGPoint], size: CGSize) {
+        var offsets: [CGPoint] = []
+        var currentX: CGFloat = 0
+        var currentY: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var totalWidth: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if currentX + size.width > maxWidth && currentX > 0 {
+                currentX = 0
+                currentY += rowHeight + spacing
+                rowHeight = 0
             }
+            offsets.append(CGPoint(x: currentX, y: currentY))
+            currentX += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+            totalWidth = max(totalWidth, currentX - spacing)
         }
-        .background(
-            GeometryReader { geo in
-                Color.clear.onAppear { totalHeight = geo.size.height }
-            }
-        )
+        return (offsets, CGSize(width: totalWidth, height: currentY + rowHeight))
     }
 }
