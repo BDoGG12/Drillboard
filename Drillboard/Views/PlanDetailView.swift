@@ -44,14 +44,15 @@ struct PlanDetailView: View {
         .navigationTitle(vm.plan.title)
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showingAISheet = true
-                } label: {
-                    Label("AI Ideas", systemImage: "sparkles")
-                }
-                .tint(.purple)
-            }
+            // TODO: DRIL-5 — re-enable once Vercel proxy is live.
+            // ToolbarItem(placement: .topBarTrailing) {
+            //     Button {
+            //         showingAISheet = true
+            //     } label: {
+            //         Label("AI Ideas", systemImage: "sparkles")
+            //     }
+            //     .tint(.purple)
+            // }
         }
         .sheet(isPresented: $showingAISheet) {
             AIIdeasSheet(planViewModel: viewModel)

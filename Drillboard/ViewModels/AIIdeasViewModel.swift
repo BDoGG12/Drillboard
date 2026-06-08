@@ -64,15 +64,16 @@ final class AIIdeasViewModel {
             library.recordPrompt(prompt)
         }
 
-        do {
-            let response = try await aiService.generateIdeas(plan: plan, userPrompt: prompt)
-            generatedIdeas = response
-            generatedTitle = response.extractedIdeaTitle(fallback: categoryLabel ?? "AI Idea")
-            savedCurrent = library.contains(content: response)
-        } catch {
-            errorMessage = error.localizedDescription
-            showingError = true
-        }
+        // TODO: DRIL-5 — re-enable once Vercel proxy is live.
+        // do {
+        //     let response = try await aiService.generateIdeas(plan: plan, userPrompt: prompt)
+        //     generatedIdeas = response
+        //     generatedTitle = response.extractedIdeaTitle(fallback: categoryLabel ?? "AI Idea")
+        //     savedCurrent = library.contains(content: response)
+        // } catch {
+        //     errorMessage = error.localizedDescription
+        //     showingError = true
+        // }
 
         isLoading = false
     }

@@ -100,13 +100,14 @@ struct AIIdeasSheet: View {
 
     private func categoryButton(_ category: IdeaCategory) -> some View {
         Button {
-            Task {
-                await viewModel.generate(
-                    plan: plan,
-                    prompt: category.prompt(for: plan),
-                    categoryLabel: category.rawValue
-                )
-            }
+            // TODO: DRIL-5 — re-enable once Vercel proxy is live.
+            // Task {
+            //     await viewModel.generate(
+            //         plan: plan,
+            //         prompt: category.prompt(for: plan),
+            //         categoryLabel: category.rawValue
+            //     )
+            // }
         } label: {
             VStack(spacing: 6) {
                 Image(systemName: category.systemIcon)
@@ -129,7 +130,8 @@ struct AIIdeasSheet: View {
 
     private var surpriseButton: some View {
         Button {
-            Task { await viewModel.generateSurprise(for: plan) }
+            // TODO: DRIL-5 — re-enable once Vercel proxy is live.
+            // Task { await viewModel.generateSurprise(for: plan) }
         } label: {
             HStack {
                 Image(systemName: "wand.and.stars")
@@ -247,13 +249,14 @@ struct AIIdeasSheet: View {
 
     private var generateButton: some View {
         Button {
-            Task {
-                await viewModel.generate(
-                    plan: plan,
-                    prompt: viewModel.promptText,
-                    categoryLabel: nil
-                )
-            }
+            // TODO: DRIL-5 — re-enable once Vercel proxy is live.
+            // Task {
+            //     await viewModel.generate(
+            //         plan: plan,
+            //         prompt: viewModel.promptText,
+            //         categoryLabel: nil
+            //     )
+            // }
         } label: {
             HStack {
                 if viewModel.isLoading {
