@@ -1,31 +1,32 @@
 import Foundation
 import Observation
+import MessageUI
 
-/// Drives `SettingsView` — owns the API key field and the transient "saved" confirmation flag.
+/// Drives `SettingsView`. Owns app-identity strings (version, AI line) plus the
+/// destinations for the Feedback and Legal rows so URLs and addresses live in one place.
 @Observable
 @MainActor
 final class SettingsViewModel {
-    var apiKey: String
-    private(set) var saved: Bool = false
+    let appName: String = "Drillboard"
+    let tagline: String = "AI-powered lesson planning for coaches"
 
-    /// Display-only model identifier shown in the About section.
-    let modelID: String
+    let version: String
+    let aiInfo: String = "Powered by Drillboard servers"
 
-    private let aiService: AIService
+    let feedbackEmail: String = "support@bdoappworkshop.com"
+    let feedbackSubject: String = "Drillboard Feedback"
+
+    let privacyURL: URL = URL(string: "https://bdoappworkshop.com/privacy")!
+    let termsURL: URL = URL(string: "https://bdoappworkshop.com/terms")!
 
     init() {
-        let svc = AIService.shared
-        self.aiService = svc
-        self.apiKey = svc.apiKey
-        self.modelID = AIService.modelID
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        version = short ?? "—"
     }
 
-    func save() {
-        aiService.apiKey = apiKey.trimmingCharacters(in: .whitespaces)
-        saved = true
-        Task {
-            try? await Task.sleep(for: .seconds(1.5))
-            saved = false
-        }
+    /// True when the device is configured to send mail. Drives the View's choice
+    /// between presenting the mail composer and showing an "unavailable" alert.
+    var canSendMail: Bool {
+        MFMailComposeViewController.canSendMail()
     }
 }
