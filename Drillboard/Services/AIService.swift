@@ -26,15 +26,12 @@ private struct AnthropicContent: Codable {
 // MARK: - Errors
 
 enum AIError: LocalizedError {
-    case missingAPIKey
     case networkError(Error)
     case invalidResponse
     case apiError(String)
 
     var errorDescription: String? {
         switch self {
-        case .missingAPIKey:
-            return "API key not set. Add your Anthropic key in Settings."
         case .networkError(let e):
             return "Network error: \(e.localizedDescription)"
         case .invalidResponse:
@@ -52,12 +49,6 @@ final class AIService {
     private init() {}
 
     static let modelID = "claude-sonnet-4-6"
-
-    /// API key persisted in `UserDefaults`, set via Settings.
-    var apiKey: String {
-        get { UserDefaults.standard.string(forKey: "drillboard_api_key") ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: "drillboard_api_key") }
-    }
 
     /// Structured system prompt — coaches get a scannable Title / Steps / Coaching tip block.
     private static let systemPrompt = """
@@ -88,8 +79,8 @@ final class AIService {
     }
 
     func generateIdeas(plan: LessonPlan, userPrompt: String) async throws -> String {
-        let key = apiKey.trimmingCharacters(in: .whitespaces)
-        guard !key.isEmpty else { throw AIError.missingAPIKey }
+        // TODO: DRIL-5 — once the Vercel proxy is live, point this URL at the proxy
+        // and remove the direct Anthropic auth path. The proxy handles auth server-side.
 
         let contextPrompt = """
         Session context:
@@ -115,7 +106,6 @@ final class AIService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(key, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.httpBody = try JSONEncoder().encode(body)
 
