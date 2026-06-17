@@ -1,3 +1,5 @@
+// AI features temporarily disabled — see DRIL-5 and DRIL-6
+
 import SwiftUI
 
 struct AIIdeasSheet: View {
