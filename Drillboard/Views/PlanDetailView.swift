@@ -3,10 +3,13 @@ import SwiftUI
 struct PlanDetailView: View {
     @State private var viewModel: PlanDetailViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(SubscriptionManager.self) private var subscriptionManager
 
     // UI-only state
     @State private var showingAISheet = false
     @State private var showingDeleteAlert = false
+    @State private var showingTimer = false
+    @State private var showingUpgrade = false
 
     init(plan: LessonPlan, store: PlanStore) {
         _viewModel = State(wrappedValue: PlanDetailViewModel(plan: plan, store: store))
@@ -30,6 +33,12 @@ struct PlanDetailView: View {
                 TextEditor(text: $vm.plan.notes)
                     .frame(minHeight: 80)
                     .font(.body)
+            }
+
+            Section {
+                startSessionButton
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    .listRowBackground(Color.clear)
             }
 
             Section {
@@ -57,6 +66,12 @@ struct PlanDetailView: View {
         .sheet(isPresented: $showingAISheet) {
             AIIdeasSheet(planViewModel: viewModel)
         }
+        .fullScreenCover(isPresented: $showingTimer) {
+            SessionTimerView(plan: viewModel.plan)
+        }
+        .sheet(isPresented: $showingUpgrade) {
+            UpgradePromptSheet()
+        }
         .alert("Delete Plan?", isPresented: $showingDeleteAlert) {
             Button("Delete", role: .destructive) {
                 viewModel.delete()
@@ -66,6 +81,31 @@ struct PlanDetailView: View {
         } message: {
             Text("This action cannot be undone.")
         }
+    }
+
+    // MARK: - Start Session
+
+    private var startSessionButton: some View {
+        Button {
+            if subscriptionManager.isPro {
+                showingTimer = true
+            } else {
+                showingUpgrade = true
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "play.fill")
+                    .font(.headline)
+                Text("Start Session")
+                    .font(.headline)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(.orange, in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Start live session timer")
     }
 }
 
