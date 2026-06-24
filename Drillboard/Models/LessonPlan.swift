@@ -13,6 +13,6 @@ struct LessonPlan: Identifiable, Codable, Equatable {
     var updatedAt: Date = Date()
 
     var subtitle: String {
-        "\(sport.rawValue) · \(level.rawValue) · \(durationMinutes) min"
+        "\(sport.rawValue) · \(level.rawValue) · \(durationMinutes.formattedAsDuration)"
     }
 }
