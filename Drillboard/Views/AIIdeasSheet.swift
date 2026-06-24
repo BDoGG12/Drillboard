@@ -71,7 +71,7 @@ struct AIIdeasSheet: View {
                 Text(plan.title)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                Text("\(plan.sport.rawValue) · \(plan.level.rawValue) · \(plan.durationMinutes) min" + (plan.focus.isEmpty ? "" : " · \(plan.focus)"))
+                Text("\(plan.sport.rawValue) · \(plan.level.rawValue) · \(plan.durationMinutes.formattedAsDuration)" + (plan.focus.isEmpty ? "" : " · \(plan.focus)"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
