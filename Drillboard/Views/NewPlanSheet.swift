@@ -12,8 +12,6 @@ struct NewPlanSheet: View {
     @State private var duration: Int = 60
     @State private var focus = ""
 
-    private let durations = [30, 45, 60, 75, 90, 120]
-
     var body: some View {
         NavigationStack {
             Form {
@@ -32,11 +30,24 @@ struct NewPlanSheet: View {
                         }
                     }
 
-                    Picker("Duration", selection: $duration) {
-                        ForEach(durations, id: \.self) { d in
-                            Text("\(d) min").tag(d)
+                }
+
+                Section {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Label("Duration", systemImage: "clock")
+                                .foregroundStyle(.secondary)
+                                .font(.subheadline.weight(.medium))
+                            Spacer()
+                            Text(duration.formattedAsDuration)
+                                .font(.subheadline.weight(.semibold))
+                                .monospacedDigit()
                         }
+                        TimePickerView(totalMinutes: $duration)
                     }
+                    .padding(.vertical, 4)
+                } header: {
+                    Text("Session length")
                 }
 
                 Section("Focus area (optional)") {
