@@ -112,19 +112,13 @@ private struct MetaFieldsSection: View {
             .labelsHidden()
         }
 
-        // Duration
-        HStack {
-            Label("Duration", systemImage: "clock")
-                .foregroundStyle(.secondary)
-                .frame(width: 110, alignment: .leading)
-            Spacer()
-            Picker("", selection: $viewModel.plan.durationMinutes) {
-                ForEach([30, 45, 60, 75, 90, 120], id: \.self) { d in
-                    Text("\(d) min").tag(d)
-                }
-            }
-            .labelsHidden()
-        }
+        // Duration — tap the value to edit via the wheel picker sheet
+        DurationRow(
+            label: "Duration",
+            systemImage: "clock",
+            totalMinutes: $viewModel.plan.durationMinutes,
+            sheetTitle: "Session Duration"
+        )
 
         // Focus
         HStack {
@@ -137,11 +131,49 @@ private struct MetaFieldsSection: View {
     }
 }
 
+// MARK: - Duration Row (reusable inside metaFields)
+
+private struct DurationRow: View {
+    let label: String
+    let systemImage: String
+    @Binding var totalMinutes: Int
+    let sheetTitle: String
+
+    @State private var showingPicker = false
+
+    var body: some View {
+        HStack {
+            Label(label, systemImage: systemImage)
+                .foregroundStyle(.secondary)
+                .frame(width: 110, alignment: .leading)
+            Spacer()
+            Button {
+                showingPicker = true
+            } label: {
+                HStack(spacing: 4) {
+                    Text(totalMinutes.formattedAsDuration)
+                        .monospacedDigit()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .foregroundStyle(.primary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(label) \(totalMinutes.formattedAsDuration). Tap to change.")
+        }
+        .sheet(isPresented: $showingPicker) {
+            DurationPickerSheet(totalMinutes: $totalMinutes, title: sheetTitle)
+        }
+    }
+}
+
 // MARK: - Phase Row
 
 struct PhaseRowView: View {
     @Binding var phase: LessonPhase
     @State private var isExpanded = true
+    @State private var showingDurationPicker = false
 
     var dotColor: Color {
         Color(hex: phase.colorHex) ?? .gray
@@ -149,31 +181,54 @@ struct PhaseRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isExpanded.toggle()
+            HStack(spacing: 8) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(dotColor)
+                            .frame(width: 10, height: 10)
+                            .accessibilityHidden(true)
+                        Text(phase.name)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                    }
                 }
-            } label: {
-                HStack {
-                    Circle()
-                        .fill(dotColor)
-                        .frame(width: 10, height: 10)
-                        .accessibilityHidden(true)
-                    Text(phase.name)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Text("\(phase.durationMinutes) min")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(phase.name), \(isExpanded ? "expanded" : "collapsed")")
+
+                Spacer()
+
+                Button {
+                    showingDurationPicker = true
+                } label: {
+                    Text(phase.durationMinutes.formattedAsDuration)
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(dotColor)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(dotColor.opacity(0.15), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(phase.name) duration \(phase.durationMinutes.formattedAsDuration). Tap to change.")
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                .buttonStyle(.plain)
+                .accessibilityHidden(true)
             }
-            .buttonStyle(.plain)
             .padding(.vertical, 6)
-            .accessibilityLabel("\(phase.name), \(phase.durationMinutes) minutes, \(isExpanded ? "expanded" : "collapsed")")
 
             if isExpanded {
                 TextEditor(text: $phase.content)
@@ -190,6 +245,9 @@ struct PhaseRowView: View {
                         }
                     }
             }
+        }
+        .sheet(isPresented: $showingDurationPicker) {
+            DurationPickerSheet(totalMinutes: $phase.durationMinutes, title: phase.name)
         }
     }
 }
