@@ -7,18 +7,20 @@ import UserNotifications
 import UIKit
 #endif
 
-/// Drives a future `SessionTimerView`. Owns countdown state, pause/skip logic, and the
-/// side effects (haptics + local notifications) that fire on every phase transition.
+/// Drives `SessionTimerView`. Owns countdown state, pause/skip logic, and the side
+/// effects (haptics + local notifications) that fire on every phase transition.
 ///
-/// **Background behavior.** iOS suspends app code within ~30s of backgrounding, so a
-/// foreground `Timer` cannot keep counting while the app is away. We schedule one
-/// `UNNotificationRequest` per upcoming phase transition at `start()` so transitions
-/// announce themselves even while suspended. When the View reports `.active` via
-/// `scenePhase`, we catch the visible state up to wall-clock time.
+/// **Background behavior.** iOS suspends app code within ~30s of backgrounding, so
+/// a foreground `Timer` cannot keep counting while the app is away. We bridge the gap
+/// by scheduling a `UNNotificationRequest` for every upcoming phase transition at
+/// `start()` (and re-scheduling on `pause`/`resume`/`skip`/`goBack`) — those fire
+/// while suspended. When the View reports `.active` via `scenePhase`, we catch the
+/// visible state up to wall-clock time so what the coach sees on reopen matches what
+/// the notifications already announced.
 @Observable
 @MainActor
 final class SessionTimerViewModel {
-    // MARK: - Published state
+    // MARK: - Published state (spec'd vars)
     var currentPhaseIndex: Int = 0
     var secondsRemaining: Int = 0
     var isPaused: Bool = false
@@ -119,20 +121,20 @@ final class SessionTimerViewModel {
 
     func goBack() {
         guard !isComplete else { return }
-        let currentDuration = (currentPhase?.durationMinutes ?? 0) * 60
-        if secondsRemaining == currentDuration, currentPhaseIndex > 0 {
-            // At the start of the phase — rewind to previous phase.
+        if secondsRemaining == (currentPhase?.durationMinutes ?? 0) * 60, currentPhaseIndex > 0 {
+            // Already at the start of the phase — rewind to previous phase.
             let previousIndex = currentPhaseIndex - 1
             let previousDuration = plan.phases[previousIndex].durationMinutes * 60
             totalSecondsElapsed = max(0, totalSecondsElapsed - previousDuration)
             currentPhaseIndex = previousIndex
             secondsRemaining = previousDuration
-            firePhaseTransitionEffects()
+            firePhaseTransitionEffects(announceNext: false)
         } else {
             // Mid-phase: rewind to the start of this phase.
-            let consumedThisPhase = currentDuration - secondsRemaining
+            let phaseDuration = (currentPhase?.durationMinutes ?? 0) * 60
+            let consumedThisPhase = phaseDuration - secondsRemaining
             totalSecondsElapsed = max(0, totalSecondsElapsed - consumedThisPhase)
-            secondsRemaining = currentDuration
+            secondsRemaining = phaseDuration
         }
         if !isPaused { scheduleAllUpcomingTransitionNotifications() }
     }
@@ -143,7 +145,7 @@ final class SessionTimerViewModel {
         start()
     }
 
-    /// Called by the View when `scenePhase` changes. Catches visible state up to
+    /// Called by the View when `scenePhase` changes. Catches up visible state from
     /// wall-clock time when the app returns from background.
     func handleScenePhase(_ phase: ScenePhase) {
         switch phase {
@@ -167,14 +169,19 @@ final class SessionTimerViewModel {
         }
     }
 
+    // MARK: - Cleanup
+
     func cancel() {
         stopTicking()
         clearScheduledNotifications()
     }
 
     deinit {
-        let ids = (0..<plan.phases.count).map { notificationIdentifierPrefix + String($0) }
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+        // notificationCenter is safe to touch nonisolated, but timerCancellable
+        // needs MainActor; the ARC tear-down handles its release for us.
+        UNUserNotificationCenter.current().removePendingNotificationRequests(
+            withIdentifiers: (0..<plan.phases.count).map { notificationIdentifierPrefix + String($0) }
+        )
     }
 
     // MARK: - Ticking
@@ -203,6 +210,9 @@ final class SessionTimerViewModel {
         }
     }
 
+    /// Advances `currentPhaseIndex` until either `secondsRemaining > 0` or we run out
+    /// of phases. Each transition fires haptics; the next-phase name is announced via
+    /// already-scheduled notifications (or via a fresh impact on skip).
     private func advancePhaseIfNeeded() {
         while secondsRemaining == 0 {
             let nextIndex = currentPhaseIndex + 1
@@ -210,22 +220,27 @@ final class SessionTimerViewModel {
                 isComplete = true
                 stopTicking()
                 clearScheduledNotifications()
-                firePhaseTransitionEffects()
+                firePhaseTransitionEffects(announceNext: false)
                 return
             }
             currentPhaseIndex = nextIndex
             secondsRemaining = plan.phases[nextIndex].durationMinutes * 60
-            firePhaseTransitionEffects()
+            firePhaseTransitionEffects(announceNext: true)
         }
     }
 
-    private func firePhaseTransitionEffects() {
+    private func firePhaseTransitionEffects(announceNext: Bool) {
         #if canImport(UIKit)
         haptic.impactOccurred()
         haptic.prepare()
         #endif
+        // We don't deliver an in-app banner; the user is looking at the timer.
+        // The scheduled local notification is what surfaces when the app is backgrounded.
+        _ = announceNext
     }
 
+    /// Recovers wall-clock time after backgrounding. Walks forward through phase
+    /// transitions just as `tick()` would, but in one shot.
     private func catchUp(by secondsAway: Int) {
         var remaining = secondsAway
         while remaining > 0, !isComplete {
@@ -248,6 +263,8 @@ final class SessionTimerViewModel {
         _ = try? await notificationCenter.requestAuthorization(options: [.alert, .sound, .badge])
     }
 
+    /// Schedules one notification per upcoming phase transition, each at the wall-clock
+    /// offset where that transition would naturally occur from *now*.
     private func scheduleAllUpcomingTransitionNotifications() {
         clearScheduledNotifications()
         guard !isComplete else { return }
