@@ -3,8 +3,8 @@ import Observation
 
 /// Persists saved AI ideas and the user's recent prompt history.
 ///
-/// A shared `@Observable` instance backed by `UserDefaults`. Views observe it
-/// via `@State private var library = IdeaLibrary.shared`.
+/// `.shared` is the production instance backed by `UserDefaults.standard`.
+/// Tests construct their own instance with a custom `UserDefaults` suite for isolation.
 @Observable
 @MainActor
 final class IdeaLibrary {
@@ -16,8 +16,11 @@ final class IdeaLibrary {
     private let savedKey   = "drillboard_saved_ideas_v1"
     private let historyKey = "drillboard_prompt_history_v1"
     private let maxHistory = 10
+    private let defaults: UserDefaults
 
-    private init() {
+    /// Defaults to `.standard` in production; tests inject a custom suite for isolation.
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         load()
     }
 
@@ -38,6 +41,12 @@ final class IdeaLibrary {
             savedIdeas.remove(at: index)
         }
         persistIdeas()
+    }
+
+    /// Removes every saved idea and clears the backing storage.
+    func clearSavedIdeas() {
+        savedIdeas.removeAll()
+        defaults.removeObject(forKey: savedKey)
     }
 
     /// True if an idea with the exact same generated text is already saved.
@@ -61,28 +70,31 @@ final class IdeaLibrary {
 
     func clearHistory() {
         promptHistory.removeAll()
-        persistHistory()
+        defaults.removeObject(forKey: historyKey)
     }
+
+    // Workaround for Swift 6.2 / iOS 26.2 @Observable + @MainActor deinit bug.
+    nonisolated deinit {}
 
     // MARK: - Persistence
 
     private func load() {
-        if let data = UserDefaults.standard.data(forKey: savedKey),
+        if let data = defaults.data(forKey: savedKey),
            let decoded = try? JSONDecoder().decode([SavedIdea].self, from: data) {
             savedIdeas = decoded
         }
-        if let arr = UserDefaults.standard.stringArray(forKey: historyKey) {
+        if let arr = defaults.stringArray(forKey: historyKey) {
             promptHistory = arr
         }
     }
 
     private func persistIdeas() {
         if let data = try? JSONEncoder().encode(savedIdeas) {
-            UserDefaults.standard.set(data, forKey: savedKey)
+            defaults.set(data, forKey: savedKey)
         }
     }
 
     private func persistHistory() {
-        UserDefaults.standard.set(promptHistory, forKey: historyKey)
+        defaults.set(promptHistory, forKey: historyKey)
     }
 }

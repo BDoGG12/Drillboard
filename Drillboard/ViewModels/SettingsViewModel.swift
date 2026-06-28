@@ -29,4 +29,7 @@ final class SettingsViewModel {
     var canSendMail: Bool {
         MFMailComposeViewController.canSendMail()
     }
+
+    // Workaround for Swift 6.2 / iOS 26.2 @Observable + @MainActor deinit bug.
+    nonisolated deinit {}
 }

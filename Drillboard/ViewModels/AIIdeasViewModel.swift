@@ -35,6 +35,12 @@ final class AIIdeasViewModel {
         self.library = .shared
     }
 
+    /// Injection init for tests — production code uses the no-arg `init()`.
+    init(aiService: AIService, library: IdeaLibrary) {
+        self.aiService = aiService
+        self.library = library
+    }
+
     // MARK: - Library re-exposure (read-only)
 
     var savedIdeas: [SavedIdea] { library.savedIdeas }
@@ -105,4 +111,7 @@ final class AIIdeasViewModel {
         UIPasteboard.general.string = generatedIdeas
         #endif
     }
+
+    // Workaround for Swift 6.2 / iOS 26.2 @Observable + @MainActor deinit bug.
+    nonisolated deinit {}
 }
