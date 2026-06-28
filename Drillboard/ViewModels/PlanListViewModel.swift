@@ -13,6 +13,11 @@ final class PlanListViewModel {
         self.store = PlanStore()
     }
 
+    /// Injection init for tests — production code uses the no-arg `init()`.
+    init(store: PlanStore) {
+        self.store = store
+    }
+
     /// View-facing read of the plans collection. `@Observable` tracks reads through `store`.
     var plans: [LessonPlan] { store.plans }
 
@@ -23,4 +28,7 @@ final class PlanListViewModel {
     func deletePlans(at offsets: IndexSet) {
         store.delete(at: offsets)
     }
+
+    // Workaround for Swift 6.2 / iOS 26.2 @Observable + @MainActor deinit bug.
+    nonisolated deinit {}
 }

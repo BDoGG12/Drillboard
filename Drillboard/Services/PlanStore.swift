@@ -8,8 +8,11 @@ final class PlanStore {
     private(set) var plans: [LessonPlan] = []
 
     private let storageKey = "drillboard_plans_v1"
+    private let defaults: UserDefaults
 
-    init() {
+    /// Defaults to `.standard` in production; tests inject a custom suite for isolation.
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         load()
         if plans.isEmpty {
             seedSample()
@@ -46,16 +49,19 @@ final class PlanStore {
 
     private func save() {
         if let data = try? JSONEncoder().encode(plans) {
-            UserDefaults.standard.set(data, forKey: storageKey)
+            defaults.set(data, forKey: storageKey)
         }
     }
 
     private func load() {
-        if let data = UserDefaults.standard.data(forKey: storageKey),
+        if let data = defaults.data(forKey: storageKey),
            let decoded = try? JSONDecoder().decode([LessonPlan].self, from: data) {
             plans = decoded
         }
     }
+
+    // Workaround for Swift 6.2 / iOS 26.2 @Observable + @MainActor deinit bug.
+    nonisolated deinit {}
 
     private func seedSample() {
         var sample = LessonPlan()

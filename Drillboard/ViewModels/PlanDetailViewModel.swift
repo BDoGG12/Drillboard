@@ -35,4 +35,7 @@ final class PlanDetailViewModel {
         let separator = plan.notes.isEmpty ? "" : "\n\n--- AI Suggestions ---\n"
         plan.notes += separator + text
     }
+
+    // Workaround for Swift 6.2 / iOS 26.2 @Observable + @MainActor deinit bug.
+    nonisolated deinit {}
 }
