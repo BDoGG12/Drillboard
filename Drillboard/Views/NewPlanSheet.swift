@@ -23,6 +23,7 @@ struct NewPlanSheet: View {
                             Label(s.rawValue, systemImage: "sportscourt").tag(s)
                         }
                     }
+                    .onAppear(perform: loadDefaultSport)
 
                     Picker("Student level", selection: $level) {
                         ForEach(SkillLevel.allCases, id: \.self) { l in
@@ -79,5 +80,14 @@ struct NewPlanSheet: View {
         plan.focus = focus
         listViewModel.addPlan(plan)
         dismiss()
+    }
+
+    /// Pulls the discipline the user picked during onboarding (if any) so a fresh
+    /// plan starts on their preferred sport. Runs once per sheet appearance.
+    private func loadDefaultSport() {
+        if let raw = UserDefaults.standard.string(forKey: OnboardingViewModel.defaultSportKey),
+           let saved = SportDiscipline(rawValue: raw) {
+            sport = saved
+        }
     }
 }
